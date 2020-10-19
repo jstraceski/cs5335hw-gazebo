@@ -18,6 +18,7 @@ std::mutex mx;
 static cairo_surface_t* surface = NULL;
 static GtkWidget *window = NULL;
 static GtkWidget *drawing_area = NULL;
+static bool draw = false;
 
 static void
 clear_surface (void)
@@ -69,7 +70,7 @@ draw_cb(GtkWidget *widget,
     guard _gg(mx);
     cairo_set_source_surface(cr, surface, 0, 0);
     cairo_paint(cr);
-
+    draw = true;
     /*
     int ww, hh;
     gtk_window_get_size(GTK_WINDOW(window), &ww, &hh);
@@ -83,7 +84,8 @@ draw_cb(GtkWidget *widget,
 static void
 draw_brush(GtkWidget *widget,
            gdouble    x,
-           gdouble    y)
+           gdouble    y,
+           float r, float g, float b)
 {
     cairo_t *cr;
 
@@ -93,14 +95,14 @@ draw_brush(GtkWidget *widget,
 
     /* Paint to the surface, where we store our state */
     cr = cairo_create(surface);
-
+    cairo_set_source_rgb(cr, r, g, b);
     cairo_rectangle(cr, x - 3, y - 3, 6, 6);
     cairo_fill(cr);
 
     cairo_destroy(cr);
 
     /* Now invalidate the affected region of the drawing area. */
-    gtk_widget_queue_draw_area(widget, x - 3, y - 3, 6, 6);
+    // gtk_widget_queue_draw_area(widget, x - 3, y - 3, 6, 6);
 }
 
 /* Handle button press events by either drawing a rectangle
@@ -214,13 +216,14 @@ activate (GtkApplication *app,
                           | GDK_POINTER_MOTION_MASK);
 
     gtk_widget_show_all(window);
+    gdk_threads_init();
 }
 
 void
-viz_hit(float range, float angle)
+viz_hit(float range, float angle, float r, float g, float b)
 {
+    GDK_THREADS_ENTER();
     guard _gg(mx);
-
     int ww, hh;
     gtk_window_get_size(GTK_WINDOW(window), &ww, &hh);
     //cout << "window: " << ww << "," << hh << endl;
@@ -245,8 +248,15 @@ viz_hit(float range, float angle)
          << ww << "," << hh << "; "
          << xx << "," << yy << endl;
     */
+    
+    draw_brush(drawing_area, xx, yy, r, g, b);
+    
+    // if (draw) {
+        gtk_widget_queue_draw(drawing_area);
+        draw = false;
+    // }
 
-    draw_brush(drawing_area, xx, yy);
+    GDK_THREADS_LEAVE();
 }
 
 int

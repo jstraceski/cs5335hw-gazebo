@@ -219,6 +219,7 @@ activate (GtkApplication *app,
 void
 viz_hit(float range, float angle)
 {
+    GDK_THREADS_ENTER();
     guard _gg(mx);
 
     int ww, hh;
@@ -247,6 +248,7 @@ viz_hit(float range, float angle)
     */
 
     draw_brush(drawing_area, xx, yy);
+    GDK_THREADS_LEAVE();
 }
 
 int

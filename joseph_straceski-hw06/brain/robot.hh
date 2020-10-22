@@ -51,7 +51,7 @@ class Robot {
     void on_scan(ConstLaserScanStampedPtr &msg);
     void on_pose(ConstPoseStampedPtr &msg);
 
-  // private:
+  private:
     bool task_done;
     float raw_x;
     float raw_y;

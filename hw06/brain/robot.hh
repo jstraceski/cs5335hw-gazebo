@@ -59,7 +59,6 @@ class Robot {
 
     int err_x;
     int err_y;
-    int err_t;
     int err_l;
     int err_r;
 

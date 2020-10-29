@@ -160,6 +160,7 @@ Robot::on_scan(ConstLaserScanStampedPtr &msg)
     auto xs = scan.ranges();
 
     this->ranges.clear();
+    cout << "xs: " << xs.size() << endl;
     for (long ii = 0; ii < xs.size(); ++ii) {
         double range = xs[ii];
         double theta = scan.angle_min() + ii*scan.angle_step();

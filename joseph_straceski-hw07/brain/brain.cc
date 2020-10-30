@@ -4,11 +4,17 @@
 #include <math.h>
 #include <vector>
 #include <deque>
+#include <chrono>
 #include <cmath>
 
 #include "robot.hh"
 #include "viz.hh"
 
+#include <mutex>
+
+/* Surface to store current scribbles */
+std::mutex mx2;
+ 
 using std::cout;
 using std::endl;
 
@@ -41,6 +47,7 @@ float grid_div = 0.19f;
 int grid_offset = 28;
 int size = std::floor((float(grid_offset) * 2.0)/grid_div);
 float radius = float(grid_offset);
+
 
 void draw_point(float x, float y, float r, float g, float b) {
 
@@ -118,7 +125,9 @@ void cmd_vel(Robot* robot, float vx, float vy, bool print) {
   float coll_tot = coll[0] * coll[0] + coll[1] * coll[1];
 
   float pred_vec = guess_diff[0] * coll[0] + coll[1] * guess_diff[1];
-  float d_s = 0.19 * 2;
+  float diff_scal = ((guess_diff[0] - coll[0]) * (guess_diff[0] - coll[0])) + ((guess_diff[1] - coll[1]) * (guess_diff[1] - coll[1]));
+  float d_s = 0.19 * clamp(1, diff_scal / 0.01f, 3);
+  cout << "!!!!!!" << clamp(1, diff_scal / 0.01f, 3) << endl;
 
   if (coll_delete && ((abs(pred_vec) > 0 && coll_tot > 0) || abs(coll[2] - guess_diff[2]) > 0.001)){
     float a1 = atan2(coll[1], coll[0]);
@@ -168,7 +177,7 @@ void cmd_vel(Robot* robot, float vx, float vy, bool print) {
 
   cout << "vx:" << vx << " vy:" << vy << endl;
   cout << "tot:" << tot << " ct:" << coll_tot << " t:" << coll_delete << " d" << abs(time_delta) << " l:" << pred_vec  << " " << guess_diff[2] << " as:" << coll[2] << endl;
-  cout << "td:" << (drive_shift[0] * 1.05f / 0.2f) << " " << (drive_shift[1] * 1.05f / 0.2f) << " " << robot->err_l << " " << robot->err_r << endl;
+  // cout << "td:" << (drive_shift[0] * 1.05f / 0.2f) << " " << (drive_shift[1] * 1.05f / 0.2f) << " " << robot->err_l << " " << robot->err_r << endl;
   
 
   if (coll_delete) {
@@ -186,6 +195,7 @@ void cmd_vel(Robot* robot, float vx, float vy, bool print) {
 
   drive_shift[0] = clamp((-10.0f * 0.2f) / 1.05f,  drive_shift[0], (10.0f * 0.2f) / 1.05f);
   drive_shift[1] = clamp((-10.0f * 0.2f) / 1.05f,  drive_shift[1], (10.0f * 0.2f) / 1.05f);
+// robot->set_vel(vx, vy);
 
   robot->set_vel(vx / 1.05f - drive_shift[0], vy / 1.05f - drive_shift[1]);
 }
@@ -198,8 +208,9 @@ bool not_validated = true;
 int col_frq = 2;
 bool passed_validation = false;
 std::vector<std::vector<float>> tile_grid(size, std::vector<float>(size, -1));
+std::vector<std::vector<float>> tile_grid_thread(size, std::vector<float>(size, -1));
 
-bool apply_adj(int x, int y, float v, std::vector<std::vector<float>> &grid) {
+void apply_adj(int x, int y, float v, std::vector<std::vector<float>> &grid) {
   int ax = x + 1;
   int ay = y + 0;
 
@@ -245,81 +256,23 @@ bool apply_adj(int x, int y, float v, std::vector<std::vector<float>> &grid) {
   }
 }
 
-bool is_adj(int x, int y, int v, std::vector<std::vector<float>> &grid) {
-  int ax = x + 1;
-  int ay = y + 0;
-
-  int bx = x - 1;
-  int by = y + 0;
-
-  int cx = x + 0;
-  int cy = y + 1;
-
-  int dx = x + 0;
-  int dy = y - 1;
-
-  int ex = x + 1;
-  int ey = y + 1;
-
-  int fx = x - 1;
-  int fy = y + 1;
-
-  int gx = x + 1;
-  int gy = y - 1;
-
-  int hx = x - 1;
-  int hy = y - 1;
+bool is_adj(int x, int y, int v, std::vector<std::vector<float>> &grid, int d) {
 
   int width = grid.size();
   int height = grid[0].size();
 
-  if (ax >= 0 && ay >= 0 && ax < width && ay < height) {
-    if (tile_grid[ax][ay] > v) {
-      return true;
+  for (int xs = -d; xs <= d; ++xs)
+  {
+    for (int ys = -d; ys <= d; ++ys)
+    {
+      int tx = x + xs;
+      int ty = y + ys;
+      if (tx >= 0 && ty >= 0 && tx < width && ty < height) {
+        if (tile_grid[tx][ty] > v) {
+          return true;
+        }
+      }
     }
-  }
-
-  if (bx >= 0 && by >= 0 && bx < width && by < height) {
-    if (tile_grid[bx][by] > v) {
-      return true;
-    }
-  }
-
-  if (cx >= 0 && cy >= 0 && cx < width && cy < height) {
-    if (tile_grid[cx][cy] > v) {
-      return true;
-    }
-  }
-
-  if (dx >= 0 && dy >= 0 && dx < width && dy < height) {
-    if (tile_grid[dx][dy] > v) {
-      return true;
-    } 
-  }
-
-
-  if (ex >= 0 && ey >= 0 && ex < width && ey < height) {
-    if (tile_grid[ex][ey] > v) {
-      return true;
-    }
-  }
-
-  if (fx >= 0 && fy >= 0 && fx < width && fy < height) {
-    if (tile_grid[fx][fy] > v) {
-      return true;
-    }
-  }
-
-  if (gx >= 0 && gy >= 0 && gx < width && gy < height) {
-    if (tile_grid[gx][gy] > v) {
-      return true;
-    }
-  }
-
-  if (hx >= 0 && hy >= 0 && hx < width && hy < height) {
-    if (tile_grid[hx][hy] > v) {
-      return true;
-    } 
   }
   return false;
 }
@@ -356,12 +309,12 @@ bool plot_point_b(int x, int y, bool add, std::vector<std::vector<float>> &grid,
   return false;
 }
 
-bool check_val(int x, int y, float val, bool adj, std::vector<std::vector<float>> &grid) {
+bool check_val(int x, int y, float val, bool adj, std::vector<std::vector<float>> &grid, int range) {
   if (x < 0 || y < 0 || x >= grid.size() || y >= grid[0].size()) {
     return true;
   }
 
-  if (grid[x][y] > val || (adj && is_adj(x, y, val, grid))) {
+  if (grid[x][y] > val || (adj && is_adj(x, y, val, grid, 3))){
     return true;
   }
 
@@ -369,7 +322,7 @@ bool check_val(int x, int y, float val, bool adj, std::vector<std::vector<float>
 }
 
 
-bool bresenham_int(int x1, int y1, int x2, int y2, bool hit, bool find, std::vector<std::vector<float>> &grid, bool draw) { 
+bool bresenham_int(int x1, int y1, int x2, int y2, bool hit, bool find, std::vector<std::vector<float>> &grid, bool draw, int range) { 
   int delta_x(x2 - x1);
   // if x1 == x2, then it does not matter what we set here
   signed char const ix((delta_x > 0) - (delta_x < 0));
@@ -384,7 +337,7 @@ bool bresenham_int(int x1, int y1, int x2, int y2, bool hit, bool find, std::vec
     return false;
   }
 
-  if (find && check_val(x1, y1, 0, false, grid)) {
+  if (find && check_val(x1, y1, 0, false, grid, 0)) {
     cout << "o1:" << x1 << " " << y1  << " " << tile_grid[x1][y1] <<  endl;
     return false;
   }
@@ -400,7 +353,7 @@ bool bresenham_int(int x1, int y1, int x2, int y2, bool hit, bool find, std::vec
 
       while (x1 != x2)
       {
-          if (find && init && check_val(last_x, last_y, 0, true, grid)) {
+          if (find && init && check_val(last_x, last_y, 0, true, grid, range)) {
             cout << "l1:" << last_x << " " << last_y <<  endl;
             return false;
           }
@@ -433,7 +386,7 @@ bool bresenham_int(int x1, int y1, int x2, int y2, bool hit, bool find, std::vec
 
       while (y1 != y2)
       {
-          if (find && init && check_val(last_x, last_y, 0, true,  grid)) {
+          if (find && init && check_val(last_x, last_y, 0, true,  grid, range)) {
             cout << "l2:" << last_x << " " << last_y <<  endl;
             return false;
           }
@@ -475,7 +428,7 @@ bool bresenham_int(int x1, int y1, int x2, int y2, bool hit, bool find, std::vec
     }
   }
 
-  if (find && init && check_val(last_x, last_y, 0, false,  grid)) {
+  if (find && init && check_val(last_x, last_y, 0, false,  grid, 5)) {
     cout << "l4:" << last_x << " " << last_y <<  endl;
     return false;
   }
@@ -484,7 +437,7 @@ bool bresenham_int(int x1, int y1, int x2, int y2, bool hit, bool find, std::vec
 }
 
 // code modified from http://www.roguebasin.com/index.php?title=Bresenham%27s_Line_Algorithm
-bool bresenham(float xf1, float yf1, float xf2, float yf2, bool hit, bool find, std::vector<std::vector<float>> &grid, bool draw) { 
+bool bresenham(float xf1, float yf1, float xf2, float yf2, bool hit, bool find, std::vector<std::vector<float>> &grid, bool draw, int range) { 
   int x1 = 0;
   int y1 = 0;
   int x2 = 0;
@@ -501,7 +454,7 @@ bool bresenham(float xf1, float yf1, float xf2, float yf2, bool hit, bool find, 
     y2 = yf2;
   }
   
-  return bresenham_int(x1, y1, x2, y2, hit, find, grid, draw);
+  return bresenham_int(x1, y1, x2, y2, hit, find, grid, draw, range);
 } 
 
 
@@ -517,9 +470,9 @@ std::deque<std::vector<int>> reduce_path(std::deque<std::vector<int>> input) {
 
     for (int j = i + 1; j < input.size() - 1; ++j) {
       std::vector<int> end = input[j];
-      cout << start[0] << " " << start[1] << " " <<  end[0] <<  " " <<  end[1] << endl;
-      if (bresenham(start[0], start[1], end[0], end[1], false, true, tile_grid, false)) {
-        cout << "del:"  << j << endl;
+      // cout << start[0] << " " << start[1] << " " <<  end[0] <<  " " <<  end[1] << endl;
+      if (bresenham(start[0], start[1], end[0], end[1], false, true, tile_grid, false, 5)) {
+        // cout << "del:"  << j << endl;
         input.erase(input.begin() + j);
         j--;
       } else {
@@ -541,10 +494,20 @@ std::deque<std::vector<int>> reduce_path(std::deque<std::vector<int>> input) {
   return input;
 }
 
+bool near_goal(int x, int y, int goal_x, int goal_y) {
+  if ((x - goal_x) * (x - goal_x) + (y - goal_y) * (y - goal_y) < 5) {
+    return true;
+  }
+  return false;
+}
+
+
 bool add_path (std::vector<std::deque<std::vector<int>>>* paths, int path_idx, 
   bool* used, std::deque<std::vector<int>>* found_path,
-  std::vector<std::vector<bool>>* not_checked,
-  int x, int y, bool not_finished) {
+  std::vector<std::vector<bool>>* not_checked, std::vector<std::vector<float>> &grid,
+  int x, int y, int x2, int y2, bool not_finished) {
+
+  // cout << x << " + " << y << " " << x2 << " + " << y2 << endl;
 
   if (x < 0 || y < 0 || x >= size || y >= size) {
     return false;
@@ -555,7 +518,7 @@ bool add_path (std::vector<std::deque<std::vector<int>>>* paths, int path_idx,
       draw_point((x)/grid_div, float(y)/grid_div, 0, 0, 1.0f);
 
 
-      if (is_adj(x, y, 0, tile_grid)) {
+      if (is_adj(x, y, 0, grid, 3) && !near_goal(x, y, x2, y2)) {
         return false;
       }
 
@@ -566,7 +529,7 @@ bool add_path (std::vector<std::deque<std::vector<int>>>* paths, int path_idx,
         new_path.emplace_front(point);
         paths->emplace_back(new_path);
 
-        if (!is_adj(x, y, -1, tile_grid) && tile_grid[x][y] < 0) {
+        if (near_goal(x, y, x2, y2) && grid[x][y] < 0) {
           *found_path = new_path;
           return true;
         }
@@ -580,7 +543,7 @@ bool add_path (std::vector<std::deque<std::vector<int>>>* paths, int path_idx,
         (*paths)[path_idx].emplace_front(point);
         *used = true;
 
-        if (!is_adj(x, y, -1, tile_grid) && tile_grid[x][y] < 0) {
+        if (near_goal(x, y, x2, y2) && grid[x][y] < 0) {
           *found_path = (*paths)[path_idx];
           return true;
         }
@@ -590,55 +553,6 @@ bool add_path (std::vector<std::deque<std::vector<int>>>* paths, int path_idx,
     return false;
 }
 
-std::deque<std::vector<int>> get_target(float xf, float yf) {
-  std::vector<std::vector<bool>> not_checked(size, std::vector<bool>(size, true));
-  std::vector<std::deque<std::vector<int>>> paths;
-
-  int x1 = std::floor((grid_offset + xf) / grid_div);
-  int y1 = std::floor((grid_offset + yf) / grid_div);
-  std::deque<std::vector<int>> path_try = {{x1, y1}};
-
-  paths.emplace_back(path_try);
-  int path_idx = 0;
-  std::deque<std::vector<int>> found_path = {{x1, y1}};
-  while (path_idx < paths.size()) {
-    bool used = false;
-
-    int xo = paths[path_idx][0][0];
-    int yo = paths[path_idx][0][1];
-
-    int ax = xo + 0;
-    int ay = yo + 1;
-
-    int bx = xo + 1;
-    int by = yo + 0;
-
-    int cx = xo + 0;
-    int cy = yo - 1;
-
-    int dx = xo - 1;
-    int dy = yo + 0;
-
-
-    if (add_path(&paths, path_idx, &used, &found_path, &not_checked, ax, ay, true)) {
-      break;
-    } else if (add_path(&paths, path_idx, &used, &found_path, &not_checked, bx, by, true)) {
-      break;
-    } else if (add_path(&paths, path_idx, &used, &found_path, &not_checked, cx, cy, true)) {
-      break;
-    } else if (add_path(&paths, path_idx, &used, &found_path, &not_checked, dx, dy, false)) {
-      break;
-    }
-
-    if (!used) {
-      path_idx += 1;
-    }
-
-  }
-
-  draw_path(found_path);
-  return found_path;
-}
 
 void setup_stage (Robot* robot) {
   if (!passed_validation) {
@@ -661,7 +575,7 @@ int c = 0;
 
 
 void fix_guess(Robot* robot) {
-  cout << robot->err_x << " " << robot->err_y << endl;
+  // cout << robot->err_x << " " << robot->err_y << endl;
   // if (abs(time_delta) < 1000) {
   //   return;
   // }
@@ -689,7 +603,7 @@ void fix_guess(Robot* robot) {
     float x2 = std::floor(r * cos(hit.angle + guess[2]) / grid_div);
     float y2 = std::floor(r * sin(hit.angle + guess[2]) / grid_div); 
 
-    bresenham_int(window_shift, window_shift, x2 + window_shift, y2 + window_shift, r <= 2.0f, false, relative_map, false);
+    bresenham_int(window_shift, window_shift, x2 + window_shift, y2 + window_shift, r <= 2.0f, false, relative_map, false, 1);
   }
 
   // cout << "B:" << robot->ranges.size() << endl;
@@ -767,74 +681,74 @@ void fix_guess(Robot* robot) {
 
 
 
-  if (best_x != (last_err[0] - robot->err_x) || best_y != (last_err[1] - robot->err_y) || c_col[0] > 0.01f || c_col[1] > 0.01f) {
-    for (int j1 = 0; j1 < window; ++j1)
-    {
-      for (int j2 = 0; j2 < window; ++j2)
-      {
-        if (relative_map[j1][j2] == -1) {
-          printf("_\t");
-        } else {
-          printf("%.3f\t", relative_map[j1][j2]);
-        }
+  // if (best_x != (last_err[0] - robot->err_x) || best_y != (last_err[1] - robot->err_y) || c_col[0] > 0.01f || c_col[1] > 0.01f) {
+    // for (int j1 = 0; j1 < window; ++j1)
+    // {
+    //   for (int j2 = 0; j2 < window; ++j2)
+    //   {
+    //     if (relative_map[j1][j2] == -1) {
+    //       printf("_\t");
+    //     } else {
+    //       printf("%.3f\t", relative_map[j1][j2]);
+    //     }
         
-      }
-      cout << endl;
-    }
+    //   }
+    //   cout << endl;
+    // }
 
-    cout << endl;
+    // cout << endl;
 
-    for (int j1 = 0; j1 < window; ++j1)
-    {
-      for (int j2 = 0; j2 < window; ++j2)
-      {
+    // for (int j1 = 0; j1 < window; ++j1)
+    // {
+    //   for (int j2 = 0; j2 < window; ++j2)
+    //   {
 
-        int x_actual = x1 - window_shift + j1;
-        int y_actual = y1 - window_shift + j2;
-        if (tile_grid[x_actual][y_actual] == -1) {
-          printf("_\t");
-        } else {
-          printf("%.3f\t", tile_grid[x_actual][y_actual]);
-        }
-      }
-      cout << endl;
-    }
+    //     int x_actual = x1 - window_shift + j1;
+    //     int y_actual = y1 - window_shift + j2;
+    //     if (tile_grid[x_actual][y_actual] == -1) {
+    //       printf("_\t");
+    //     } else {
+    //       printf("%.3f\t", tile_grid[x_actual][y_actual]);
+    //     }
+    //   }
+    //   cout << endl;
+    // }
     
-    cout << endl;
+    // cout << endl;
 
-    for (int j1 = 0; j1 < window; ++j1)
-    {
-      for (int j2 = 0; j2 < window; ++j2)
-      {
+    // for (int j1 = 0; j1 < window; ++j1)
+    // {
+    //   for (int j2 = 0; j2 < window; ++j2)
+    //   {
 
-        int x_actual = x1 - window_shift + best_x + j1;
-        int y_actual = y1 - window_shift + best_y + j2;
+    //     int x_actual = x1 - window_shift + best_x + j1;
+    //     int y_actual = y1 - window_shift + best_y + j2;
 
-        if (abs(relative_map[j1][j2] - tile_grid[x_actual][y_actual]) == 0) {
-          printf("_\t");
-        } else {
-          printf("%.3f\t", abs(relative_map[j1][j2] - tile_grid[x_actual][y_actual]));
-        }
-      }
-      cout << endl;
-    }
+    //     if (abs(relative_map[j1][j2] - tile_grid[x_actual][y_actual]) == 0) {
+    //       printf("_\t");
+    //     } else {
+    //       printf("%.3f\t", abs(relative_map[j1][j2] - tile_grid[x_actual][y_actual]));
+    //     }
+    //   }
+    //   cout << endl;
+    // }
 
 
-    cout << endl;
+    // cout << endl;
 
-    last_pos = {this_pos[0], this_pos[1]};
-    this_pos = {robot->pos_x, robot->pos_y};
-    cout << best_x << " " << best_y << endl;
-    cout << last_guess[0] << " " << last_guess[1] << endl;
-    cout << guess[0] << " " << guess[1] << endl;
-    cout << (last_err[0] - robot->err_x) << " " << (last_err[1] - robot->err_y) << endl;
-    cout << (guess[0] - last_guess [0]) << " | " << (guess[1] - last_guess [1]) << endl;
+    // last_pos = {this_pos[0], this_pos[1]};
+    // this_pos = {robot->pos_x, robot->pos_y};
+    // cout << best_x << " " << best_y << endl;
+    // cout << last_guess[0] << " " << last_guess[1] << endl;
+    // cout << guess[0] << " " << guess[1] << endl;
+    // cout << (last_err[0] - robot->err_x) << " " << (last_err[1] - robot->err_y) << endl;
+    // cout << (guess[0] - last_guess [0]) << " | " << (guess[1] - last_guess [1]) << endl;
     
-    cout << last_guess[0] << " " << last_guess[1] << endl;
-    cout << robot->raw_x << " " << robot->raw_y << endl;
-    cout << robot->pos_x << " " << robot->pos_y << endl;
-    cout << "C " << c_col[0] << " " << c_col[1] << " " << (this_pos[0] - last_pos[0]) << " " << (this_pos[1] - last_pos[1]) <<  " " << robot->err_x << " " << robot->err_y << " "  << endl;
-  }
+    // cout << last_guess[0] << " " << last_guess[1] << endl;
+    // cout << robot->raw_x << " " << robot->raw_y << endl;
+    // cout << robot->pos_x << " " << robot->pos_y << endl;
+    // cout << "C " << c_col[0] << " " << c_col[1] << " " << (this_pos[0] - last_pos[0]) << " " << (this_pos[1] - last_pos[1]) <<  " " << robot->err_x << " " << robot->err_y << " "  << endl;
+  // }
 
   offset[0] += best_x * grid_div;
   offset[1] += best_y * grid_div;
@@ -843,7 +757,7 @@ void fix_guess(Robot* robot) {
   offset[1] = clamp((-10.0f * 0.2f) / 1.05f,  offset[1], (10.0f * 0.2f) / 1.05f);
 
 
-  last_err = {robot->err_x, robot->err_y};
+  // last_err = {robot->err_x, robot->err_y};
 
   last_guess = {robot->pos_x/1.05f + offset[0], robot->pos_y/1.05f + offset[1], robot->pos_t};
 
@@ -863,16 +777,17 @@ void fix_guess(Robot* robot) {
 int check_count = 0;
 int check_limit = 25;
 int check_count2 = 0;
-int check_limit2 = 500;
+int check_limit2 = 50;
 
 std::deque<std::vector<int>> target_path;
+std::deque<std::vector<int>> target_path_thread;
 std::vector<int> target_point = {};
 bool has_path = false;
 
 bool hit_drive = false;
 
 bool drive_to_point (Robot* robot, std::vector<int> point) {
-  draw_point(float(point[0] * grid_div), float(point[1] * grid_div), 1.0f, 0, 1.0f);
+  draw_point(float(point[0] * grid_div), float(point[1] * grid_div), 0.0f, 1.0f, 0.0f);
   float dx = (float(point[0] * grid_div) - grid_offset) - guess[0];
   float dy = (float(point[1] * grid_div) - grid_offset) - guess[1];
   float ang = atan2(dy, dx);
@@ -884,41 +799,60 @@ bool drive_to_point (Robot* robot, std::vector<int> point) {
     tang += PI * 2;
   }
 
-  float turn = 1.5f;
-  if (tang < -0.10){
-    if (dist > 2 * 2 && tang > -0.3 && hit_drive) {
-      cmd_vel(robot, 3.0, 3.0 - turn, false);
+  float c_dist = 0.35;
+  float brgt = clamp(0.0, robot->ranges[0].range, 2.0);
+  float rgt = clamp(0.0, robot->ranges[1].range, 2.0);
+  float frgt = clamp(0.0, robot->ranges[2].range, 2.0);
+  float fwd = clamp(0.0, robot->ranges[3].range, 2.0);
+  float flft = clamp(0.0, robot->ranges[4].range, 2.0);
+  float lft = clamp(0.0, robot->ranges[5].range, 2.0);
+  float blft = clamp(0.0, robot->ranges[6].range, 2.0);
+  bool flag = brgt < c_dist || rgt  < c_dist || frgt < c_dist || fwd < 0.5 || flft < c_dist || lft < c_dist || blft < c_dist;
+  std::vector<float> v = {brgt, rgt, frgt, fwd, flft, lft, blft};
+
+
+  float speed = 2.5f;
+  float turn = 0.5f;
+
+  if (dist < 2 * 2) {
+    return true;
+  } else if (tang < -0.20){
+    if (dist > 4 * 4 && tang > -0.35 && hit_drive) {
+      cmd_vel(robot, speed + turn, speed - turn, false);
     } else {
-      cmd_vel(robot, 3.0, -3.0, false);
+      cmd_vel(robot, speed, -speed, false);
     }
-     if (robot->ranges[3].range < 0.4 || robot->ranges[2].range < 0.4 || robot->ranges[4].range < 0.4) {
+     if (flag) {
+        print_arr(v);
       cout << "cancel " << robot->ranges[3].range << " " <<  robot->ranges[2].range << " " << robot->ranges[4].range << endl;
       return true;
     } 
     cout << "rotating " << ang << " " << guess[2]  << " " << tang << endl;
     return false;
-  } else if (tang > 0.10){
-    if (dist > 2 * 2 && tang < 0.3 && hit_drive) {
-      cmd_vel(robot, 3.0 - turn, 3.0, false);
+  } else if (tang > 0.20){
+    if (dist > 4 * 4 && tang < 0.35 && hit_drive) {
+      cmd_vel(robot, speed - turn, speed + turn, false);
     } else {
-      cmd_vel(robot, -3.0, 3.0, false);
+      cmd_vel(robot, -speed, speed, false);
     }
     cout << "rotating " << ang << " " << guess[2] << " " << tang << endl;
-     if (robot->ranges[3].range < 0.4 || robot->ranges[2].range < 0.4 || robot->ranges[4].range < 0.4) {
+     if (flag) {
+        print_arr(v);
       cout << "cancel " << robot->ranges[3].range << " " <<  robot->ranges[2].range << " " << robot->ranges[4].range << endl;
       return true;
     } 
     return false;
-  } else if (dist > 0.5 * 0.5) {
+  } else if (dist > 2 * 2) {
     cout << "driving" << ang << " " << guess[2] << " " << tang << endl;
     hit_drive = true;
-    if (robot->ranges[3].range < 0.4 || robot->ranges[2].range < 0.4 || robot->ranges[4].range < 0.4) {
+    if (flag) {
+        print_arr(v);
       cout << "cancel " << robot->ranges[3].range << " " <<  robot->ranges[2].range << " " << robot->ranges[4].range << endl;
       return true;
     } 
-    cmd_vel(robot, 3, 3, false);
+    cmd_vel(robot, speed, speed, false);
     return false;
-  }
+  } 
 
   hit_drive = false;
 
@@ -927,6 +861,9 @@ bool drive_to_point (Robot* robot, std::vector<int> point) {
 
 bool left_follow = false;
 bool right_follow = false;
+bool searching = false;
+
+std::vector<float> thread_pos = {0, 0};
 
 void main_drive(Robot* robot) {
   //cout << "validating" << endl;
@@ -936,6 +873,7 @@ void main_drive(Robot* robot) {
   cout << coll[0] << " = "<< coll[1] <<  " " << time_delta << endl;
   cout << save_guess[0] - guess[0] << " - "<< save_guess[1] - guess[1] <<  " " << time_delta << endl;
   fix_guess(robot);
+  cout << "go" << endl;
   guess = {robot->pos_x/1.05f + offset[0], robot->pos_y/1.05f + offset[1], robot->pos_t};
   
   // if (check_count > check_limit && !result) {
@@ -956,50 +894,11 @@ void main_drive(Robot* robot) {
 
     float x_val1 = guess[0] + clamp(0.0f, r, 2.0f) * cos(hit.angle + guess[2]);
     float y_val1 = guess[1] + clamp(0.0f, r, 2.0f) * sin(hit.angle + guess[2]);
-    bresenham(guess[0], guess[1], x_val1, y_val1, r <= 2.0f, false, tile_grid, true);
+    bresenham(guess[0], guess[1], x_val1, y_val1, r <= 2.0f, false, tile_grid, true, 1);
   }
 
-  if (check_count2 > check_limit2) {
-    if (!has_path) {
-      cout << " o " << endl;
-      target_path = reduce_path(get_target(guess[0], guess[1]));
 
-      if (target_path.size() > 0) {
-        has_path = true;
-        target_point = target_path.back();
-        target_path.pop_back();
-      } else {
-        check_count2 = 0;
-        has_path = false;
-      }
-    } else if (has_path) {
-      float dx = float(target_point[0] * grid_div) - float(grid_offset);
-      float dy = float(target_point[1] * grid_div) - float(grid_offset);
-      cout << "driving to = [" << dx << ", " << dy << "] p_left: [" << target_path.size() << "] current = [" << guess[0] << " " <<  guess[1] << "]" << endl;
-      if (tile_grid[target_point[0]][target_point[1]] > 0 ) {
-        cout << "path_updated:" << tile_grid[target_point[0]][target_point[1]] << endl;
-        check_count2 = 0;
-        has_path = false;
-      } else if (drive_to_point(robot, target_point)) {
-        if (target_path.size() > 0) {
-          target_point = target_path.back();
-          target_path.pop_back();
-        } else {
-          check_count2 = 0;
-          has_path = false;
-        }
-      }
-    } else {
-      check_count2 = 0;
-      has_path = false;
-    }
-    cout << "?" << endl;
-    return;
-  }
-
-  cout << "cc:" << check_count2 << endl;
-  check_count++;
-
+  float c_dist = 0.35;
   float brgt = clamp(0.0, robot->ranges[0].range, 2.0);
   float rgt = clamp(0.0, robot->ranges[1].range, 2.0);
   float frgt = clamp(0.0, robot->ranges[2].range, 2.0);
@@ -1007,6 +906,58 @@ void main_drive(Robot* robot) {
   float flft = clamp(0.0, robot->ranges[4].range, 2.0);
   float lft = clamp(0.0, robot->ranges[5].range, 2.0);
   float blft = clamp(0.0, robot->ranges[6].range, 2.0);
+  bool flag = brgt < c_dist || rgt  < c_dist || frgt < c_dist || fwd < 0.5 || flft < c_dist || lft < c_dist || blft < c_dist;
+  std::vector<float> v = {brgt, rgt, frgt, fwd, flft, lft, blft};
+
+  for (int i = 0; i < target_path.size(); ++i)
+  {
+    float dx = float(target_path[i][0] * grid_div) - float(grid_offset);
+    float dy = float(target_path[i][1] * grid_div) - float(grid_offset);
+    cout << i << " " << target_path[i][0] << " " << target_path[i][1] << " " << dx << " " << dy << endl; 
+  }
+
+  // if (check_count2 > check_limit2 ) {
+    if (has_path) {
+      float dx = float(target_point[0] * grid_div) - float(grid_offset);
+      float dy = float(target_point[1] * grid_div) - float(grid_offset);
+      int sx = std::floor((grid_offset + guess[0]) / grid_div);
+      int sy = std::floor((grid_offset + guess[1]) / grid_div);
+
+      cout << "driving to = [" << dx << ", " << dy << "] p_left: [" << target_path.size() << "] current = [" << guess[0] << " " <<  guess[1] << "] " << thread_pos[0] << " " << thread_pos[1] << endl;
+      flag = flag || !bresenham_int(sx, sy, target_point[0], target_point[1], false, true, tile_grid, false, 0);
+      if (tile_grid[target_point[0]][target_point[1]] > 0.5 || flag) {
+        cout << "path_updated:" << tile_grid[target_point[0]][target_point[1]] << endl;
+        print_arr(v);
+        check_count2 = 0;
+        has_path = false;
+      } else if (drive_to_point(robot, target_point)) {
+        if (target_path.size() > 0) {
+          target_point = target_path.back();
+          target_path.pop_back();
+        } else {
+          target_point.clear();
+          target_path.clear();
+          check_count2 = 0;
+          has_path = false;
+        }
+      }
+
+      cout << "?" << endl;
+      return;
+    } else {
+      cout << "path_cleared" << endl;
+      has_path = false;
+
+      target_point.clear();
+      check_count2 = 0;
+    }
+    check_count2 = check_limit2;
+  // }
+
+  cout << "cc:" << check_count2  << " p?:" << has_path << " s?:" << searching << endl;
+  check_count2++;
+
+  
   
   float speed = 2.5f;
   float turn = 1.5f;
@@ -1081,6 +1032,9 @@ void main_drive(Robot* robot) {
   }
 }
 int setup_c = 0;
+bool at_goal = false;
+bool at_goal2 = false;
+bool new_goal = false;
 
 void callback(Robot* robot) {
   // cheat_input = {robot->raw_x, robot->raw_y, robot->raw_t};
@@ -1091,17 +1045,172 @@ void callback(Robot* robot) {
   // if (setup) {
   //   setup_stage(robot);
   // } else {
+
+  // draw_point(robot->raw_x  - float(grid_offset), robot->raw_y  - float(grid_offset), 0.5f, 0.5f, 0.0f);
+  // draw_point(guess[0] - float(grid_offset), guess[1] - float(grid_offset), 0.0f, 0.5f, 0.5f);
   if (setup_c < 20) {
     setup_c++;
     return;
   }
+      cout << "p" << endl;
+  at_goal = robot->at_goal();
+
+  if (mx2.try_lock()) {
+
+    if (new_goal) {
+      target_path.clear();
+      cout << "k" << endl;
+
+
+      for (int i = 0; i < target_path_thread.size(); ++i)
+      {
+        std::vector<int> p = {target_path_thread[i][0], target_path_thread[i][1]};
+        target_path.emplace_back(p);
+      }
+
+      if (target_path.size() > 0) {
+        target_point = target_path.back();
+        target_path.pop_back();
+
+        has_path = true;
+      }
+
+      new_goal = false;
+    }
+
+    cout << ":" << endl;
+    for (int i = 0; i < size; ++i)
+    {
+      for (int i2 = 0; i2 < size; ++i2)
+      {
+        tile_grid_thread[i][i2] = tile_grid[i][i2];
+      }
+    }
+
+    thread_pos = {guess[0], guess[1]};
+
+    mx2.unlock();
+  }
+
+    cout << "*" << endl;
+
   main_drive(robot);
   // } 
 }
 
+std::deque<std::vector<int>> get_target(float xf, float yf, float t_x, float t_y, std::vector<std::vector<float>> &grid) {
+  std::vector<std::vector<bool>> not_checked(size, std::vector<bool>(size, true));
+  std::vector<std::deque<std::vector<int>>> paths;
+
+  int x1 = std::floor((grid_offset + xf) / grid_div);
+  int y1 = std::floor((grid_offset + yf) / grid_div);
+  int x2 = std::floor((grid_offset + t_x) / grid_div);
+  int y2 = std::floor((grid_offset + t_y) / grid_div);
+  std::deque<std::vector<int>> path_try = {{x1, y1}};
+
+  paths.emplace_back(path_try);
+  int path_idx = 0;
+  std::deque<std::vector<int>> found_path = {{x1, y1}};
+  while (path_idx < paths.size()) {
+    bool used = false;
+
+    int xo = paths[path_idx][0][0];
+    int yo = paths[path_idx][0][1];
+
+    int ax = xo + 0;
+    int ay = yo + 1;
+
+    int bx = xo + 1;
+    int by = yo + 0;
+
+    int cx = xo + 0;
+    int cy = yo - 1;
+
+    int dx = xo - 1;
+    int dy = yo + 0;
+
+
+    std::vector<std::vector<int>> n2 = {{ax, ay}, {bx, by}, {cx, cy}, {dx, dy}};
+    std::vector<int> order = {0, 1, 2, 3};
+    std::vector<float> orderf = {0, 1, 2, 3};
+    std::vector<float> dists = {0, 0, 0, 0};
+
+    for (int i = 0; i < 3; ++i)
+    {
+      for (int i = 0; i < n2.size() - 1; ++i)
+      {
+        std::vector<int> p1 = n2[order[i]];
+        std::vector<int> p2 = n2[order[i + 1]];
+
+        float v1 = ((p1[0] - x2) * (p1[0] - x2)) + ((p1[1] - y2) * (p1[1] - y2));
+        float v2 = ((p2[0] - x2) * (p2[0] - x2)) + ((p2[1] - y2) * (p2[1] - y2));
+        dists[order[i]] = v1;
+        dists[order[i + 1]] = v2;
+
+        if (v1 > v2) {
+          int tmp = order[i];
+          order[i] = order[i + 1];
+          order[i + 1] = tmp;
+        }
+      }
+    }
+
+    for (int i = 0; i < 4; ++i)
+    {
+      orderf[i] = float(order[i]);
+    }
+
+    // print_arr(orderf);
+    // print_arr(dists);
+
+    bool end = false;
+
+    for (int i = 0; i < 4; ++i)
+    {
+      int idx = order[i];
+      if (add_path(&paths, path_idx, &used, &found_path, &not_checked, grid, n2[idx][0], n2[idx][1], x2, y2, i < 3)){
+        end = true;
+        break;
+      }
+    }
+    
+
+    if (end) {
+      break;
+    } 
+
+    if (!used) {
+      path_idx += 1;
+    }
+
+  }
+
+  draw_path(found_path);
+  return found_path;
+}
+
+
+void calc_path() {
+  cout << "Thread spawned" << endl;
+  while (!at_goal) {
+    if (!new_goal && !has_path) {
+      mx2.lock();
+      at_goal2 = at_goal;
+      searching = true;
+
+      target_path_thread = reduce_path(get_target(thread_pos[0], thread_pos[1], 20, 0, tile_grid_thread));
+      new_goal = true;
+      mx2.unlock();
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  }
+}
+
+
 void
 robot_thread(Robot* robot)
 {
+    std::thread first (calc_path);
     robot->do_stuff();
 }
 

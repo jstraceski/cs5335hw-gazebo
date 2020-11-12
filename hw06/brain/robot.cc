@@ -186,3 +186,4 @@ Robot::on_pose(ConstPoseStampedPtr &msg)
 
     this->update();
 }
+

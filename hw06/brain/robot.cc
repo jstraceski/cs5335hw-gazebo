@@ -142,8 +142,14 @@ Robot::done()
 void
 Robot::set_vel(double lvel, double rvel)
 {
-    lvel = clamp(-5, degrade(lvel, err_l), 5);
-    rvel = clamp(-5, degrade(rvel, err_r), 5);
+    // Generate a random error modifier in the range [-10, 10]% 
+    auto r_error = rvel * ((rand() % 21) - 10) * 0.01; 
+    auto l_error = lvel * ((rand() % 21) - 10) * 0.01;
+    
+    // Apply error and clamp the velocities.
+    lvel = clamp(-5, lvel + l_error, 5);
+    rvel = clamp(-5, rvel + r_error, 5);
+
     int xx = 128 + int(lvel * 25.0);
     int yy = 128 + int(rvel * 25.0);
     auto msg = msgs::ConvertAny(xx * 256 + yy);
